@@ -1,0 +1,105 @@
+from selenium import webdriver
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from datetime import datetime
+from time import sleep
+import pandas as pd
+import os
+import shutil
+import glob
+
+
+
+opts = Options()
+opts.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36')
+
+try:
+    # Inicializa Chrome usando WebDriver Manager
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
+    url = 'https://sognare.direksys.com/'
+    driver.get(url)
+    sleep(5)
+except Exception as e:
+    print(f"Error en la inicialización del navegador o carga de la página: {e}")
+
+
+try:
+    username = 'TU_USUARIO_AQUI'  # Reemplaza o usa variable de entorno
+    password = 'TU_PASSWORD_AQUI' # Reemplaza o usa variable de entorno
+
+    input_username = driver.find_element(By.XPATH, '//input[@name="username"]')
+    input_password = driver.find_element(By.XPATH, '//input[@name="password"]')
+
+    input_username.send_keys(username)
+    input_password.send_keys(password)
+
+    # Seleccion de compañia (puede variar segun usuario)
+    select_company = driver.find_element(By.XPATH, '//select[@name="e"]')
+    select_company.send_keys("Sognare Kioskos")
+
+    login = driver.find_element(By.XPATH, '//input[@type="submit" and @value="   Login   " and @class="button"]')
+    login.click()
+
+except Exception as e:
+    print(f"Error en el inicio de sesión: {e}")
+
+
+try:
+    # Intenta cerrar ventana emergente si existe
+    X = driver.find_element(By.XPATH, '//a[@id="fancybox-close"]')
+    X.click()
+    sleep(3)
+except Exception as e:
+    print(f"Error al navegar por los módulos: {e}")
+
+
+try:
+    # Navega al reporte especifico
+    driver.get('http://pagina/cgi-bin/mod/admin/admin?cmd=rep_bi_invoicing')
+    
+    today = datetime.today().strftime('%Y-%m-%d')
+
+    From_Date = driver.find_element(By.XPATH, '//input[@id="from_date" and @name="from_date"]')
+    
+    # Puedes ajustar esta fecha segun necesidad
+    From_Date.send_keys('2025-01-01')
+
+    To_Date = driver.find_element(By.XPATH, '//input[@id="to_date" and @name="to_date"]')
+    To_Date.send_keys(today)
+
+    To_Date_click = driver.find_element(By.XPATH, '//td[@width="25%"]')
+    To_Date_click.click()
+    sleep(2)
+
+    Exportar = driver.find_element(By.XPATH, '//input[@type="submit" and @value="Run"]')
+    Exportar.click()
+
+except Exception as e:
+    print(f"Erroe: {e}")
+
+
+try:
+    # -----------------------------
+    # Actualizar estas rutas segun tu equipo
+    # -----------------------------
+    carpeta_descargas = r"C:\Users\TU_USUARIO\Downloads"     # Cambiar por la tuya
+    carpeta_destino = r"C:\Users\TU_USUARIO\Documents\RUTA"  # Cambiar por la tuya
+
+    archivos = glob.glob(os.path.join(carpeta_descargas, "invoicing_Sognare_Kioskos*.csv"))
+    
+    if archivos:
+        archivo_mas_reciente = max(archivos, key=os.path.getmtime)
+        
+        os.makedirs(carpeta_destino, exist_ok=True)
+        
+        archivo_destino = os.path.join(carpeta_destino, os.path.basename(archivo_mas_reciente))
+        
+        shutil.move(archivo_mas_reciente, archivo_destino)
+        print(f"Archivo movido a: {archivo_destino}")
+    else:
+        print("No se encontraron archivos con el patron especificado.")
+
+except Exception as e:
+    print(f"Error: {e}")
