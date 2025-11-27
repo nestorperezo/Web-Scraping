@@ -1,0 +1,249 @@
+import os
+from time import sleep
+from datetime import datetime, timedelta
+import glob
+import shutil
+
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+
+def iniciar_navegador():
+    """
+    Inicializa el navegador Chrome con algunas opciones basicas
+    """
+    opts = Options()
+    # User-Agent generico
+    opts.add_argument(
+        'user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Chrome/114.0.0.0 Safari/537.36'
+    )
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--no-sandbox")
+
+    # Para ejecuciones en servidores / contenedores, puedes descomentar:
+    # opts.add_argument("--headless=new")
+
+    driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager().install()),
+        options=opts
+    )
+    return driver
+
+
+def obtener_fechas():
+    """
+    Obtiene el rango de fechas:
+    - date_from: primer dia del mes actual
+    - date_to: ayer
+    Formato: YYYY-MM-DD
+    """
+    date_from = datetime.today().date().replace(day=1).strftime("%Y-%m-%d")
+    date_to = (datetime.today().date() - timedelta(days=1)).strftime("%Y-%m-%d")
+    return date_from, date_to
+
+
+def iniciar_sesion(driver, usuario, contrasena):
+    """
+    Inicia sesion en el sistema.
+
+    """
+    login_url = "https://www.pagina.com/"
+    driver.get(login_url)
+    wait = WebDriverWait(driver, 15)
+
+    try:
+        wait.until(EC.presence_of_element_located((By.NAME, "username")))
+        driver.find_element(By.NAME, "username").send_keys(usuario)
+        driver.find_element(By.NAME, "password").send_keys(contrasena)
+        driver.find_element(By.NAME, "e").send_keys("Sognare Retail")
+        driver.find_element(
+            By.XPATH,
+            '//input[@type="submit" and @value="   Login   " and @class="button"]'
+        ).click()
+        print("Inicio de seson")
+    except Exception as e:
+        print(f"Error: {e}")
+
+
+def descargar_reporte(
+    driver,
+    url_reporte,
+    xpath_fecha_desde=None,
+    xpath_fecha_hasta=None,
+    xpath_date_click=None,
+    xpath_boton=None,
+):
+    """
+    Navega a la URL del reporte, ingresa fechas (si aplica) y hace clic
+    en el boton para generar/exportar el archivo.
+
+    Parametros:
+        - url_reporte: URL del reporte en la pagina.
+        - xpath_fecha_desde / xpath_fecha_hasta: XPaths de los inputs de fecha
+        - xpath_date_click: XPath de algun elemento que requiera clic para
+          activar el rango de fechas (opcional)
+        - xpath_boton: XPath del boton de "Run" / "Export"
+    """
+    driver.get(url_reporte)
+    wait = WebDriverWait(driver, 15)
+    date_from, date_to = obtener_fechas()
+
+    try:
+        if xpath_fecha_desde and xpath_fecha_hasta:
+            wait.until(
+                EC.element_to_be_clickable((By.XPATH, xpath_fecha_desde))
+            ).clear()
+            driver.find_element(By.XPATH, xpath_fecha_desde).send_keys(date_from)
+
+            wait.until(
+                EC.element_to_be_clickable((By.XPATH, xpath_fecha_hasta))
+            ).clear()
+            driver.find_element(By.XPATH, xpath_fecha_hasta).send_keys(date_to)
+
+        if xpath_date_click:
+            wait.until(
+                EC.element_to_be_clickable((By.XPATH, xpath_date_click))
+            ).click()
+
+        if xpath_boton:
+            wait.until(
+                EC.element_to_be_clickable((By.XPATH, xpath_boton))
+            ).click()
+
+        print(f"Descarga del reporte {url_reporte} iniciada.")
+        # Ajusta este tiempo segun lo que tarde en generarse el archivo
+        sleep(5)
+    except Exception as e:
+        print(f"Error en la exportacion del reporte: {e}")
+
+
+def mover_archivo(nombre_patron, carpeta_descargas, carpeta_destino):
+    """
+    Mueve el archivo mas reciente que coincida con el patron 'nombre_patron'
+    desde 'carpeta_descargas' hasta 'carpeta_destino'
+
+    Ejemplo de patron: 'Descarga_data*.csv'
+    """
+    try:
+        archivos = glob.glob(os.path.join(carpeta_descargas, nombre_patron))
+        if archivos:
+            archivo_mas_reciente = max(archivos, key=os.path.getmtime)
+            os.makedirs(carpeta_destino, exist_ok=True)
+            archivo_destino = os.path.join(
+                carpeta_destino,
+                os.path.basename(archivo_mas_reciente)
+            )
+            shutil.move(archivo_mas_reciente, archivo_destino)
+            print(f"Archivo movido a: {archivo_destino}")
+        else:
+            print(f"No se encontraron archivos con el patrn {nombre_patron}.")
+    except Exception as e:
+        print(f"Error: {e}")
+
+
+def main():
+    # ==== CONFIGURACION ====
+    # 1) Descarga
+    #    Idealmente, obtener estas rutas desde variables de entorno
+    #    o un archivo de configuracion
+    carpeta_descargas = os.getenv(
+        "DOWNLOADS_FILE",
+        r"C:\Users\TU_USUARIO\Downloads"  # <- Modificar en tu entorno local
+    )
+
+    # 2) Directorio base donde se guardarán los reportes ya ordenados
+    base_destino = os.getenv(
+        "REPORTS_FILE",
+        r"C:\Users\TU_USUARIO\Documents\WebScraping_Reportes"
+    )
+
+    # 3) Credenciales desde variables de entorno (NO las pongas en el codigo)
+    usuario = os.getenv("user")
+    contrasena = os.getenv("pwd")
+
+    if not usuario or not contrasena:
+        raise ValueError(
+            "Las variables de entorno user y pwd no estan definidas"
+        )
+
+    driver = iniciar_navegador()
+    wait = WebDriverWait(driver, 15)
+
+    try:
+        iniciar_sesion(driver, usuario, contrasena)
+
+        reportes = [
+            {
+                "url": "http://pagina1.com",
+                "xpath_fecha_desde": '//input[@id="from_date" and @name="from_date"]',
+                "xpath_fecha_hasta": '//input[@id="to_date" and @name="to_date"]',
+                "xpath_date_click": '//td[@width="25%"]',
+                "xpath_boton": '//input[@type="submit" and @value="Run"]',
+                "patron": "invoicing_Sognare_Retail*.csv",
+                "destino": os.path.join(base_destino, "Invoicing Report"),
+            },
+            {
+                "url": "http://pagina2.com",
+                "xpath_fecha_desde": '//input[@id="from_367" and @name="from_367"]',
+                "xpath_fecha_hasta": '//input[@id="to_367" and @name="to_367"]',
+                "xpath_date_click": '//td[@width="30%"]',
+                "xpath_boton": '//input[@type="submit" and @value="Export"]',
+                "patron": "Base_facturas*.csv",
+                "destino": os.path.join(base_destino, "Base Facturas"),
+            },
+            {
+                "url": "http://pagina3.com",
+                "xpath_fecha_desde": None,
+                "xpath_fecha_hasta": None,
+                "xpath_date_click": None,
+                "xpath_boton": '//input[@type="submit" and @value="Export"]',
+                "patron": "Precios_por_Cliente*.csv",
+                "destino": os.path.join(base_destino, "Precio por cliente"),
+            },
+            {
+                "url": "http://pagina4.com",
+                "xpath_fecha_desde": None,
+                "xpath_fecha_hasta": None,
+                "xpath_date_click": None,
+                "xpath_boton": '//input[@type="submit" and @value="Export"]',
+                "patron": "Direcciones_de_Clientes*.csv",
+                "destino": os.path.join(base_destino, "Direccion de clientes"),
+            },
+            {
+                "url": "http://pagina5.com",
+                "xpath_fecha_desde": None,
+                "xpath_fecha_hasta": None,
+                "xpath_date_click": None,
+                "xpath_boton": '//input[@type="submit" and @value="Export"]',
+                "patron": "Catalogo_de_Clientes*.csv",
+                "destino": os.path.join(base_destino, "Catalogo de clientes"),
+            },
+        ]
+
+        for reporte in reportes:
+            descargar_reporte(
+                driver,
+                reporte["url"],
+                reporte["xpath_fecha_desde"],
+                reporte["xpath_fecha_hasta"],
+                reporte["xpath_date_click"],
+                reporte["xpath_boton"],
+            )
+            mover_archivo(
+                reporte["patron"],
+                carpeta_descargas,
+                reporte["destino"],
+            )
+    finally:
+        driver.quit()
+
+
+if __name__ == "__main__":
+    main()
